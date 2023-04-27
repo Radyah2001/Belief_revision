@@ -14,12 +14,26 @@ class LogicalSentence:
     
     def __hash__(self) -> int:
         return hash(("sentence", self.__repr__()))
+    
+    def __contains__(self, item):
+        return item in self.expr
+    
+    def __iter__(self):
+        return iter([self.expr])
 
     def prettyPrint(self) -> str:
         return f"{self.expr.prettyPrint()}"
 
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.expr.eval(vals)
+
+    def is_literal(self) -> bool:
+        return (type(self.expr) == Symbol) or (type(self.expr) == Negation and type(self.expr.expr) == Symbol)
+    
+    def remove_literal(self, literal):
+        return self.expr.remove(literal)
+        
+
 
 
 class Biimplication:
@@ -29,6 +43,12 @@ class Biimplication:
     
     def __repr__(self) -> str:
         return f"Biimplication({self.left}, {self.right})"
+    
+    def __contains__(self, item):
+        return item in self.left or item in self.right
+    
+    def __iter__(self):
+        return iter([self.left, self.right])
     
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} <=> {self.right.prettyPrint()}"
@@ -44,6 +64,12 @@ class Implication:
     
     def __repr__(self) -> str:
         return f"Implication({self.left}, {self.right})"
+    
+    def __contains__(self, item):
+        return item in self.left or item in self.right
+    
+    def __iter__(self):
+        return iter([self.left, self.right])
     
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} => {self.right.prettyPrint()}"
@@ -61,6 +87,12 @@ class Conjunction:
     def __repr__(self) -> str:
         return f"Conjunction({self.left}, {self.right})"
     
+    def __contains__(self, item):
+        return item in self.left or item in self.right
+    
+    def __iter__(self):
+        return iter([self.left, self.right])
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} & {self.right.prettyPrint()}"
 
@@ -76,6 +108,12 @@ class Disjunction:
     def __repr__(self) -> str:
         return f"Disjunction({self.left}, {self.right})"
     
+    def __contains__(self, item):
+        return item in self.left or item in self.right
+    
+    def __iter__(self):
+        return iter([self.left, self.right])
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} | {self.right.prettyPrint()}"
     
@@ -89,6 +127,15 @@ class Negation:
     
     def __repr__(self) -> str:
         return f"Not({self.expr})"
+    
+    def __iter__(self):
+        return iter([self.expr])
+    
+    def __contains__(self, item):
+        return item in self.expr
+    
+    def is_literal(self) -> bool:
+        return type(self.expr) == Symbol
     
     def prettyPrint(self) -> str:
         return f"!{self.expr.prettyPrint()}"
@@ -104,11 +151,23 @@ class Symbol:
     def __repr__(self) -> str:
         return f"Symbol({self.symbol})"
     
+    def __eq__(self, other) -> bool:
+        self.__repr__() == other.__repr__()
+    
+    def __contains__(self, item):
+        return item.symbol == self.symbol
+    
+    def __iter__(self):
+        return iter([self.symbol])
+    
     def prettyPrint(self) -> str:
         return self.symbol
 
     def eval(self, vals : Mapping[str, bool]) -> bool:
-        return vals[self.symbol]
+        if (self.symbol in vals):
+            return vals[self.symbol]
+        else:
+            return 'UNKNOWN'
 
 
 class Bracket:
