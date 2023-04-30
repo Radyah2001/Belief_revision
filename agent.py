@@ -70,11 +70,16 @@ def cnf(logical) -> LogicalSentence:
             case Disjunction():
                 match logical.left, logical.right:
                     case Conjunction(), other:
-                        return Conjunction(cnf(Disjunction(logical.left.left, logical.right)), cnf(Disjunction(logical.left.right, logical.right)))
+                        return cnf(Conjunction(cnf(Disjunction(logical.left.left, logical.right)), cnf(Disjunction(logical.left.right, logical.right))))
                     case other, Conjunction():
-                        return Conjunction(cnf(Disjunction(logical.left, logical.right.left)), cnf(Disjunction(logical.left, logical.right.right)))
+                        return cnf(Conjunction(cnf(Disjunction(logical.left, logical.right.left)), cnf(Disjunction(logical.left, logical.right.right))))
                     case other1, other2:
-                        return Disjunction(cnf(other1), cnf(other2))
+                        other1_cnf = cnf(other1)
+                        other2_cnf = cnf(other2)
+
+                        if (type(other1_cnf) == Conjunction or type(other2_cnf) == Conjunction):
+                            return cnf(Disjunction(other1_cnf, other2_cnf))
+                        return Disjunction(other1_cnf, other2_cnf)
                     
             case Negation():
                 match logical.expr:
@@ -90,9 +95,10 @@ def cnf(logical) -> LogicalSentence:
                                 return cnf(logical.expr.expr.expr)
                             case other:
                                 return Negation(cnf(logical.expr.expr))
+                    case Symbol():
+                        return Negation(cnf(logical.expr))
                     case other:
-                        return Negation(cnf(other))
-                    
+                        return cnf(Negation(cnf(other)))
             case Symbol():
                 return logical
             
@@ -374,41 +380,159 @@ def test_pl_fc_entails(agent):
 ####               PL-RESOLUTION                ####
 ####################################################
 def pl_resolution(belief_base, sentence):
-    clauses = list(get_clauses(LogicalSentence(Conjunction(bb_conjunction(list(belief_base)), Negation(sentence.expr)))))
-    new = set()
+    clauses = get_clauses(LogicalSentence(Conjunction(bb_conjunction(list(belief_base)), Negation(sentence.expr))))
+    
+    clean_clauses(clauses)
+
+    clauses_list = list(clauses)
+
 
     while True:
-        for c1 in clauses:
-            for c2 in clauses:
+        new = set()
+        for c1 in clauses_list:
+            for c2 in clauses_list:
                 if c1 == c2:
                     continue
 
-            resolvents = pl_resolve(c1, c2)
+                resolvents = pl_resolve(c1, c2)
 
-            # Checking empty clause. Is this right?
-            if ("" in resolvents):
-                return True
-            
-            new = new.union(resolvents)
+                # Checking empty clause
+                if (LogicalSentence(Symbol("")) in resolvents):
+                    return True
+                
+                new = new.union(resolvents)
 
         if new.issubset(clauses):
             return False
         
         clauses = clauses.union(new)
+        
+        clean_clauses(clauses)
+
+        clauses_list = list(clauses)
+
+def clean_clauses(clauses):
+    clauses_list = list(clauses)
+    
+    for clause in clauses_list:
+        if (contains_complementary_literals(clause)):
+            clauses.remove(clause)
+
+def contains_complementary_literals(sentence):
+    symbols = sentence.get_symbols()
+
+    for symbol in symbols:
+        if {Sign.POSITIVE, Sign.NEGATIVE}.issubset(sentence.get_sign(symbol)):
+            return True
+    return False
+
+# Removes literal that is in nested disjunction
+# Sentence cannot start with LogicalSentece()
+def remove_literal_in_disjunction(sentence, symbol):
+
+    if type(sentence) == Bracket:
+        return remove_literal_in_disjunction(sentence.expr, symbol)
+
+    if sentence.left == symbol:
+        return sentence.right
+    
+    if sentence.right == symbol:
+        return sentence.left
+    
+    if LogicalSentence(sentence.right).is_literal():
+        return sentence
+    
+    
+    return Disjunction(sentence.left, remove_literal_in_disjunction(sentence.right, symbol))
+
+
+# Expects sentence to be nested disjunctions or (negated) symbol
+def get_all_literals(sentence, literals = None):
+
+    if literals is None:
+        literals = set()
+
+    match sentence:
+        case Symbol() | Negation():
+            literals.add(sentence)
+            return literals
+        case Disjunction():
+            literals.add(sentence.left)
+            literals.union(get_all_literals(sentence.right, literals))
+            return literals
+        case Bracket():
+            return get_all_literals(sentence.expr, literals)
 
 
 def pl_resolve(clause1, clause2):
-    pass
+
+    new_clauses = set()
+    clause2_literals = get_all_literals(clause2.expr)
+
+    for literal in clause2_literals:
+        if type(literal) == Negation:
+            clause1_sign = clause1.get_sign(literal.expr)
+        else:
+            clause1_sign = clause1.get_sign(literal)
+
+        # Checking if literal is non-negated
+        if type(literal) == Symbol:
+            if Sign.NEGATIVE in clause1_sign:
+                    if clause1.is_negation():
+                        clause1_removed = Symbol("")
+                    else:
+                        # clause 2 must be inside disjunction in clause 1
+                        clause1_removed = remove_literal_in_disjunction(clause1.expr, Negation(literal))
+
+                    if clause2.is_literal():
+                        new_clauses.add(LogicalSentence(clause1_removed))
+                    else:
+                        clause2_removed = remove_literal_in_disjunction(clause2.expr, literal)
+                        if clause1_removed == Symbol(""):
+                            new_clauses.add(LogicalSentence(clause2_removed))
+                        else:
+                            new_clauses.add(LogicalSentence(Disjunction(clause1_removed, clause2_removed)))
+                    continue
+            else:
+                continue
+
+        # clause 2 must be a negated literal
+        if Sign.POSITIVE in clause1_sign:
+            if clause1.is_clean_literal():
+                clause1_removed = Symbol("")
+            else:
+                # clause 2 must be inside disjunction in clause 1
+                clause1_removed = remove_literal_in_disjunction(clause1.expr, literal.expr)
+
+            if clause2.is_literal():
+                new_clauses.add(LogicalSentence(clause1_removed))
+            else:
+                clause2_removed = remove_literal_in_disjunction(clause2.expr, literal)
+                if clause1_removed == Symbol(""):
+                    new_clauses.add(LogicalSentence(clause2_removed))
+                else:
+                    new_clauses.add(LogicalSentence(Disjunction(clause1_removed, clause2_removed)))
+            continue  
+        else:
+            continue
+    
+    return new_clauses
 
 # Testing
 def test_pl_resolution(agent):
-    agent.add_belief("a")
-    agent.add_belief("!b | c")
-    sentence = Logic.logicFromString("c")
+    agent.add_belief("B11 <=> (P12 | P21)")
+    agent.add_belief("B11")
+    sentence = Logic.logicFromString("!P12")
     print(pl_resolution(agent.belief_base.beliefs, sentence))
 
 ####################################################
-####                 TESTING                    ####
+####                 CONTRACTION                ####
+####################################################
+
+
+
+####################################################
+####                   TESTING                  ####
 ####################################################
 
 # Testing

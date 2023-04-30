@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from collections.abc import Mapping
+from collections import Counter
 
 
 class Boolean(Enum):
@@ -19,10 +20,10 @@ class LogicalSentence:
         return f"LogicalSentence({self.expr})"
     
     def __eq__(self, other) -> bool:
-        return self.__repr__() == other.__repr__()
-    
+        return self.__hash__() == other.__hash__()
+
     def __hash__(self) -> int:
-        return hash(("sentence", self.__repr__()))
+        return hash(("sentence", self.expr))
     
     def __contains__(self, item):
         return item in self.expr
@@ -49,6 +50,13 @@ class LogicalSentence:
     def is_literal(self) -> bool:
         return (type(self.expr) == Symbol) or (type(self.expr) == Negation and type(self.expr.expr) == Symbol)
 
+    def is_negation(self) -> bool:
+        return type(self.expr) == Negation and type(self.expr.expr) == Symbol
+    
+    def is_clean_literal(self) -> bool:
+        return type(self.expr) == Symbol
+
+    
     def get_sign(self, symbol):
         return self.expr.get_sign(symbol)
 
@@ -68,7 +76,7 @@ class Biimplication:
         return iter([self.left, self.right])
     
     def __hash__(self) -> int:
-        return hash(("biimplication", self.__repr__()))
+        return hash(frozenset(Counter(["biimplication", self.left, self.right]).items()))
     
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} <=> {self.right.prettyPrint()}"
@@ -103,7 +111,7 @@ class Implication:
         return iter([self.left, self.right])
     
     def __hash__(self) -> int:
-        return hash(("implication", self.__repr__()))
+        return hash(("implication", self.left, self.right))
     
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} => {self.right.prettyPrint()}"
@@ -135,7 +143,7 @@ class Conjunction:
         return iter([self.left, self.right])
     
     def __hash__(self) -> int:
-        return hash(("conjunction", self.__repr__()))
+        return hash(frozenset(Counter(["conjunction", self.left, self.right]).items()))
     
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} & {self.right.prettyPrint()}"
@@ -172,10 +180,10 @@ class Disjunction:
         return iter([self.left, self.right])
     
     def __hash__(self) -> int:
-        return hash(("disjunction", self.__repr__()))
+        return hash(frozenset(Counter(["disjunction", self.left, self.right]).items()))
     
     def prettyPrint(self) -> str:
-        return f"{self.left.prettyPrint()} | {self.right.prettyPrint()}"
+        return f"({self.left.prettyPrint()} | {self.right.prettyPrint()})"
     
     def eval(self, vals : Mapping[str, bool]):
         left = self.left.eval(vals)
@@ -201,6 +209,9 @@ class Negation:
     def __repr__(self) -> str:
         return f"Not({self.expr})"
     
+    def __eq__(self, other) -> bool:
+        return self.__repr__() == other.__repr__()
+
     def __iter__(self):
         return iter([self.expr])
     
@@ -208,13 +219,13 @@ class Negation:
         return item in self.expr
     
     def __hash__(self) -> int:
-        return hash(("negation", self.__repr__()))
+        return hash(("negation", self.expr))
     
     def is_literal(self) -> bool:
         return type(self.expr) == Symbol
     
     def prettyPrint(self) -> str:
-        return f"!{self.expr.prettyPrint()}"
+        return f"!({self.expr.prettyPrint()})"
 
     def eval(self, vals : Mapping[str, bool]):
         result = self.expr.eval(vals)
@@ -282,7 +293,7 @@ class Bracket:
         return f"Bracket({self.expr})"
     
     def __hash__(self) -> int:
-        return hash(("bracket", self.__repr__()))
+        return hash(("bracket", self.expr))
     
     def prettyPrint(self) -> str:
         return f"({self.expr.prettyPrint()})"
@@ -363,14 +374,19 @@ class Operations(Enum):
 class Logic:
     @staticmethod
     def remove_left_space(sentence):
-        while (sentence[0] == ' '):
-            return Logic.remove_left_space(sentence[1:])
+        while (sentence[0] == " "):
+            sentence = sentence[1:]
+            if sentence == "":
+                return ""
         return sentence 
     
     @staticmethod
     def lex(sentence, ops):
         while sentence != "":
             sentence = Logic.remove_left_space(sentence)
+
+            if sentence == "":
+                break
 
             if sentence[0].isalpha():
 
