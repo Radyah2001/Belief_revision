@@ -2,12 +2,6 @@ from enum import Enum, auto
 from collections.abc import Mapping
 from collections import Counter
 
-
-class Boolean(Enum):
-    UNKNOWN = auto(),
-    TRUE = auto(),
-    FALSE = auto()
-
 class Sign(Enum):
     POSITIVE = auto(),
     NEGATIVE = auto()
@@ -35,30 +29,10 @@ class LogicalSentence:
         return f"{self.expr.prettyPrint()}"
 
     def eval(self, vals : Mapping[str, bool]):
-        result = self.expr.eval(vals)
-        match result:
-            case Boolean.TRUE:
-                return True
-            case Boolean.FALSE:
-                return False
-            case Boolean.UNKNOWN:
-                return Boolean.UNKNOWN
+        return self.expr.eval(vals)
 
     def get_symbols(self):
         return self.expr.get_symbols()
-
-    def is_literal(self) -> bool:
-        return (type(self.expr) == Symbol) or (type(self.expr) == Negation and type(self.expr.expr) == Symbol)
-
-    def is_negation(self) -> bool:
-        return type(self.expr) == Negation and type(self.expr.expr) == Symbol
-    
-    def is_clean_literal(self) -> bool:
-        return type(self.expr) == Symbol
-
-    
-    def get_sign(self, symbol):
-        return self.expr.get_sign(symbol)
 
 
 class Biimplication:
@@ -82,13 +56,7 @@ class Biimplication:
         return f"{self.left.prettyPrint()} <=> {self.right.prettyPrint()}"
     
     def eval(self, vals : Mapping[str, bool]):
-        left = self.left.eval(vals)
-        right = self.right.eval(vals)
-
-        if (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
-            return Boolean.UNKNOWN
-        else:
-            return left == right
+        return self.left.eval(vals) == self.right.eval(vals)
         
     def get_symbols(self):
         return self.left.get_symbols().union(self.right.get_symbols())
@@ -117,10 +85,9 @@ class Implication:
         return f"{self.left.prettyPrint()} => {self.right.prettyPrint()}"
 
     def eval(self, vals : Mapping[str, bool]):
-        left = self.left.eval(vals)
-        if (left == Boolean.FALSE): return True
-        elif (left == Boolean.UNKNOWN): return left
-        else: return self.right.eval(vals)
+        if self.left.eval(vals) == False:
+            return True
+        return self.right.eval(vals)
 
     def get_symbols(self):
         return self.left.get_symbols().union(self.right.get_symbols())
@@ -149,15 +116,7 @@ class Conjunction:
         return f"{self.left.prettyPrint()} & {self.right.prettyPrint()}"
 
     def eval(self, vals : Mapping[str, bool]):
-        left = self.left.eval(vals)
-        right = self.right.eval(vals)
-
-        if (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
-            return Boolean.UNKNOWN
-        elif (left == Boolean.FALSE or right == Boolean.FALSE):
-            return Boolean.FALSE
-        else: 
-            return Boolean.TRUE
+        self.left.eval(vals) and self.right.eval(vals)
 
     def get_symbols(self):
         return self.left.get_symbols().union(self.right.get_symbols())
@@ -186,15 +145,7 @@ class Disjunction:
         return f"({self.left.prettyPrint()} | {self.right.prettyPrint()})"
     
     def eval(self, vals : Mapping[str, bool]):
-        left = self.left.eval(vals)
-        right = self.right.eval(vals)
-
-        if (left == Boolean.TRUE or right == Boolean.TRUE):
-            return Boolean.TRUE
-        elif (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
-            return Boolean.UNKNOWN
-        else: 
-            return Boolean.FALSE
+        self.left.eval(vals) or self.right.eval(vals)
 
     def get_symbols(self):
         return self.left.get_symbols().union(self.right.get_symbols())
@@ -228,13 +179,7 @@ class Negation:
         return f"!({self.expr.prettyPrint()})"
 
     def eval(self, vals : Mapping[str, bool]):
-        result = self.expr.eval(vals)
-        if (result == Boolean.TRUE):
-            return Boolean.FALSE
-        elif (result == Boolean.FALSE):
-            return Boolean.TRUE
-        else:
-            return Boolean.UNKNOWN
+        return not self.expr.eval(vals)
 
     def get_symbols(self):
         return self.expr.get_symbols()
@@ -269,12 +214,8 @@ class Symbol:
 
     def eval(self, vals : Mapping[str, bool]):
         if (self in vals):
-            if vals[self]:
-                return Boolean.TRUE
-            else:
-                return Boolean.FALSE
-        else:
-            return Boolean.UNKNOWN
+            return vals[self]
+        raise Exception(f"Symbol {self.symbol} is not assigned a truth value in {vals}")
 
     def get_symbols(self):
         return {Symbol(self.symbol)}
@@ -299,7 +240,7 @@ class Bracket:
         return f"({self.expr.prettyPrint()})"
 
     def eval(self, vals : Mapping[str, bool]):
-        return self.expr.eval()
+        return self.expr.eval(vals)
 
     def get_symbols(self):
         return self.expr.get_symbols()
@@ -310,7 +251,7 @@ class Bracket:
 class LogicTrue:
     
     def eval(self, vals):
-        return Boolean.TRUE
+        return True
     
     def __repr__(self):
         return f"True"
@@ -333,7 +274,7 @@ class LogicTrue:
 class LogicFalse:
     
     def eval(self, vals):
-        return Boolean.FALSE
+        return False
     
     def __repr__(self):
         return f"False"

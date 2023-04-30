@@ -51,6 +51,7 @@ def simple_revision(belief_base, new_belief):
 ####               CNF CONVERSION               ####
 ####################################################
 
+
 def cnf(logical) -> LogicalSentence:
         match logical:
             case LogicalSentence():
@@ -107,6 +108,7 @@ def cnf(logical) -> LogicalSentence:
             
             case _:
                 raise Exception(f"Case {type(logical)} not covered")
+
 
 
 ####################################################
@@ -187,3 +189,5 @@ def test_pl_fc_entails(agent):
     symbol = Logic.logicFromString("c")
     agent.belief_base.beliefs = convert_dbb_to_implication(agent.belief_base.beliefs)
     print(pl_fc_entails(agent.belief_base.beliefs, symbol))
+
+test_pl_fc_entails(BeliefRevisionAgent())
