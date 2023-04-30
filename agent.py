@@ -55,20 +55,18 @@ def cnf(logical) -> LogicalSentence:
         match logical:
             case LogicalSentence():
                 return  LogicalSentence(cnf(logical.expr))
+            
             case Biimplication():
                 cnf_left = cnf(logical.left)
                 cnf_right = cnf(logical.right)
                 return cnf(Conjunction(Implication(cnf_left, cnf_right), Implication(cnf_right, cnf_left)))
+            
             case Implication():
                 return cnf(Disjunction(cnf(Negation(logical.left)), cnf(logical.right)))
+            
             case Conjunction():
-                match logical.left, logical.right:
-                    case Disjunction(), other:
-                        return Disjunction(cnf(Conjunction(logical.left.left, logical.right)), cnf(Conjunction(logical.left.right, logical.right)))
-                    case other, Disjunction():
-                        return Disjunction(cnf(Conjunction(logical.left, logical.right.left)), cnf(Conjunction(logical.left, logical.right.right)))
-                    case other1, other2:
-                        return Conjunction(cnf(other1), cnf(other2))
+                return Conjunction(cnf(logical.left), cnf(logical.right))
+            
             case Disjunction():
                 match logical.left, logical.right:
                     case Conjunction(), other:
@@ -77,6 +75,7 @@ def cnf(logical) -> LogicalSentence:
                         return Conjunction(cnf(Disjunction(logical.left, logical.right.left)), cnf(Disjunction(logical.left, logical.right.right)))
                     case other1, other2:
                         return Disjunction(cnf(other1), cnf(other2))
+                    
             case Negation():
                 match logical.expr:
                     case Negation():
@@ -93,44 +92,40 @@ def cnf(logical) -> LogicalSentence:
                                 return Negation(cnf(logical.expr.expr))
                     case other:
                         return Negation(cnf(other))
+                    
             case Symbol():
                 return logical
+            
             case Bracket():
                 return Bracket(cnf(logical.expr))
+            
             case _:
                 raise Exception(f"Case {type(logical)} not covered")
 
 ####################################################
-####                DPLL-ENTAILS                ####
+####             GENERAL FUNCTIONS              ####
 ####################################################
-## NOT FULLY FINISHED
 
-def clean(logical, model):
-    match logical:
-        case LogicalSentence() | Negation():
-            return logical.__class__(clean(logical.expr, model))
-        case Disjunction():
-            if logical.left.eval(model):
-                return clean(logical.right, model)
-            elif logical.right.eval(model):
-                return clean(logical.left, model)
-            else:
-                return Disjunction(clean(logical.left, model), clean(logical.right, model))
-        case Conjunction():
-            return Conjunction(clean(logical.left, model), clean(logical.right, model))
-        case Symbol():
-            return logical
+def bb_conjunction(beliefs):
+    
+    if len(beliefs) == 1:
+        return beliefs[0].expr
+
+    return Conjunction(beliefs[0].expr, bb_conjunction(beliefs[1:]))
+
+def get_clauses(sentence):
+    return split_conjunction(cnf(sentence))
 
 # Split conjunctions into separate clauses, so we can have a set of clauses that only contain disjunctions
 # For example (A | B) & (C | D) becomes (A | B), (C | D) in our set of clauses since we don't care about conjunctions
 def split_conjunction(logical, split_set = set()):
     match logical:
         case LogicalSentence():
-            return split_set.union(split_conjunction(logical.expr, split_set))
+            return split_conjunction(logical.expr, split_set)
         case Biimplication():
-            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+            return set()
         case Implication():
-            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+            return set()
         case Conjunction():
             left = split_conjunction(logical.left, split_set.copy())
             right = split_conjunction(logical.right, split_set.copy())
@@ -153,24 +148,36 @@ def split_conjunction(logical, split_set = set()):
 
             return split_set
         case Disjunction():
-            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+            return set()
         case Negation():
             return split_set.union(split_conjunction(logical.expr, split_set))
         case Symbol():
             return set()
         case Bracket():
-            return split_set.union(split_conjunction(logical.expr, split_set))
+            return set()
 
 
-def get_clauses(sentence):
-    return split_conjunction(cnf(sentence))
+####################################################
+####                DPLL-ENTAILS                ####
+####################################################
+## NOT FULLY FINISHED
 
-def bb_conjunction(beliefs):
-    
-    if len(beliefs) == 1:
-        return beliefs[0].expr
+def clean(logical, model):
+    match logical:
+        case LogicalSentence() | Negation():
+            return logical.__class__(clean(logical.expr, model))
+        case Disjunction():
+            if logical.left.eval(model):
+                return clean(logical.right, model)
+            elif logical.right.eval(model):
+                return clean(logical.left, model)
+            else:
+                return Disjunction(clean(logical.left, model), clean(logical.right, model))
+        case Conjunction():
+            return Conjunction(clean(logical.left, model), clean(logical.right, model))
+        case Symbol():
+            return logical
 
-    return Conjunction(beliefs[0].expr, bb_conjunction(beliefs[1:]))
 
 def find_pure_symbol(symbols, clauses, model):
 
@@ -355,9 +362,7 @@ def pl_fc_entails(belief_base, symbol):
     return False
 
 # Demonstration of pl_fc_entails
-
-
-def test_pl_fc_entails():
+def test_pl_fc_entails(agent):
     agent.add_belief("a")
     agent.add_belief("!b | c")
     symbol = Logic.logicFromString("c")
@@ -365,8 +370,49 @@ def test_pl_fc_entails():
     print(pl_fc_entails(agent.belief_base.beliefs, symbol))
 
 
+####################################################
+####               PL-RESOLUTION                ####
+####################################################
+def pl_resolution(belief_base, sentence):
+    clauses = list(get_clauses(LogicalSentence(Conjunction(bb_conjunction(list(belief_base)), Negation(sentence.expr)))))
+    new = set()
+
+    while True:
+        for c1 in clauses:
+            for c2 in clauses:
+                if c1 == c2:
+                    continue
+
+            resolvents = pl_resolve(c1, c2)
+
+            # Checking empty clause. Is this right?
+            if ("" in resolvents):
+                return True
+            
+            new = new.union(resolvents)
+
+        if new.issubset(clauses):
+            return False
+        
+        clauses = clauses.union(new)
+
+
+def pl_resolve(clause1, clause2):
+    pass
+
+# Testing
+def test_pl_resolution(agent):
+    agent.add_belief("a")
+    agent.add_belief("!b | c")
+    sentence = Logic.logicFromString("c")
+    print(pl_resolution(agent.belief_base.beliefs, sentence))
+
+####################################################
+####                 TESTING                    ####
+####################################################
 
 # Testing
 agent = BeliefRevisionAgent()
 
-#test_pl_fc_entails()
+#test_pl_fc_entails(agent)
+test_pl_resolution(agent)
