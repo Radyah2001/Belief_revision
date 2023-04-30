@@ -2,6 +2,15 @@ from enum import Enum, auto
 from collections.abc import Mapping
 
 
+class Boolean(Enum):
+    UNKNOWN = auto(),
+    TRUE = auto(),
+    FALSE = auto()
+
+class Sign(Enum):
+    POSITIVE = auto(),
+    NEGATIVE = auto()
+
 class LogicalSentence:
     def __init__(self, expr):
         self.expr = expr
@@ -24,16 +33,24 @@ class LogicalSentence:
     def prettyPrint(self) -> str:
         return f"{self.expr.prettyPrint()}"
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        return self.expr.eval(vals)
+    def eval(self, vals : Mapping[str, bool]):
+        result = self.expr.eval(vals)
+        match result:
+            case Boolean.TRUE:
+                return True
+            case Boolean.FALSE:
+                return False
+            case Boolean.UNKNOWN:
+                return Boolean.UNKNOWN
+
+    def get_symbols(self):
+        return self.expr.get_symbols()
 
     def is_literal(self) -> bool:
         return (type(self.expr) == Symbol) or (type(self.expr) == Negation and type(self.expr.expr) == Symbol)
-    
-    def remove_literal(self, literal):
-        return self.expr.remove(literal)
-        
 
+    def get_sign(self, symbol):
+        return self.expr.get_sign(symbol)
 
 
 class Biimplication:
@@ -50,12 +67,26 @@ class Biimplication:
     def __iter__(self):
         return iter([self.left, self.right])
     
+    def __hash__(self) -> int:
+        return hash(("biimplication", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} <=> {self.right.prettyPrint()}"
     
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        return self.left.eval(vals) == self.right.eval(vals)
+    def eval(self, vals : Mapping[str, bool]):
+        left = self.left.eval(vals)
+        right = self.right.eval(vals)
 
+        if (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
+            return Boolean.UNKNOWN
+        else:
+            return left == right
+        
+    def get_symbols(self):
+        return self.left.get_symbols().union(self.right.get_symbols())
+    
+    def get_sign(self, symbol):
+        return self.left.get_sign(symbol).union(self.right.get_sign(symbol))
 
 class Implication:
     def __init__(self, left, right):
@@ -71,13 +102,23 @@ class Implication:
     def __iter__(self):
         return iter([self.left, self.right])
     
+    def __hash__(self) -> int:
+        return hash(("implication", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} => {self.right.prettyPrint()}"
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        if (self.left.eval(vals) == False): return True
+    def eval(self, vals : Mapping[str, bool]):
+        left = self.left.eval(vals)
+        if (left == Boolean.FALSE): return True
+        elif (left == Boolean.UNKNOWN): return left
         else: return self.right.eval(vals)
 
+    def get_symbols(self):
+        return self.left.get_symbols().union(self.right.get_symbols())
+
+    def get_sign(self, symbol):
+        return self.left.get_sign(symbol).union(self.right.get_sign(symbol))
 
 class Conjunction:
     def __init__(self, left, right):
@@ -93,12 +134,28 @@ class Conjunction:
     def __iter__(self):
         return iter([self.left, self.right])
     
+    def __hash__(self) -> int:
+        return hash(("conjunction", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} & {self.right.prettyPrint()}"
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        return self.left.eval(vals) and self.right.eval(vals)
+    def eval(self, vals : Mapping[str, bool]):
+        left = self.left.eval(vals)
+        right = self.right.eval(vals)
+
+        if (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
+            return Boolean.UNKNOWN
+        elif (left == Boolean.FALSE or right == Boolean.FALSE):
+            return Boolean.FALSE
+        else: 
+            return Boolean.TRUE
+
+    def get_symbols(self):
+        return self.left.get_symbols().union(self.right.get_symbols())
     
+    def get_sign(self, symbol):
+        return self.left.get_sign(symbol).union(self.right.get_sign(symbol))
 
 class Disjunction:
     def __init__(self, left, right):
@@ -114,12 +171,28 @@ class Disjunction:
     def __iter__(self):
         return iter([self.left, self.right])
     
+    def __hash__(self) -> int:
+        return hash(("disjunction", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return f"{self.left.prettyPrint()} | {self.right.prettyPrint()}"
     
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        return self.left.eval(vals) or self.right.eval(vals)
+    def eval(self, vals : Mapping[str, bool]):
+        left = self.left.eval(vals)
+        right = self.right.eval(vals)
 
+        if (left == Boolean.TRUE or right == Boolean.TRUE):
+            return Boolean.TRUE
+        elif (left == Boolean.UNKNOWN or right == Boolean.UNKNOWN):
+            return Boolean.UNKNOWN
+        else: 
+            return Boolean.FALSE
+
+    def get_symbols(self):
+        return self.left.get_symbols().union(self.right.get_symbols())
+
+    def get_sign(self, symbol):
+        return self.left.get_sign(symbol).union(self.right.get_sign(symbol))
 
 class Negation:
     def __init__(self, expr):
@@ -134,15 +207,32 @@ class Negation:
     def __contains__(self, item):
         return item in self.expr
     
+    def __hash__(self) -> int:
+        return hash(("negation", self.__repr__()))
+    
     def is_literal(self) -> bool:
         return type(self.expr) == Symbol
     
     def prettyPrint(self) -> str:
         return f"!{self.expr.prettyPrint()}"
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        return not self.expr.eval(vals)
+    def eval(self, vals : Mapping[str, bool]):
+        result = self.expr.eval(vals)
+        if (result == Boolean.TRUE):
+            return Boolean.FALSE
+        elif (result == Boolean.FALSE):
+            return Boolean.TRUE
+        else:
+            return Boolean.UNKNOWN
 
+    def get_symbols(self):
+        return self.expr.get_symbols()
+    
+    def get_sign(self, symbol):
+        if self.expr == symbol:
+            return {Sign.NEGATIVE}
+        else:
+            return {None}
 
 class Symbol:
     def __init__(self, symbol: str):
@@ -152,23 +242,37 @@ class Symbol:
         return f"Symbol({self.symbol})"
     
     def __eq__(self, other) -> bool:
-        self.__repr__() == other.__repr__()
+        return self.__repr__() == other.__repr__()
     
     def __contains__(self, item):
-        return item.symbol == self.symbol
+        return self == item
     
     def __iter__(self):
         return iter([self.symbol])
     
+    def __hash__(self) -> int:
+        return hash(("symbol", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return self.symbol
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
-        if (self.symbol in vals):
-            return vals[self.symbol]
+    def eval(self, vals : Mapping[str, bool]):
+        if (self in vals):
+            if vals[self]:
+                return Boolean.TRUE
+            else:
+                return Boolean.FALSE
         else:
-            return 'UNKNOWN'
+            return Boolean.UNKNOWN
 
+    def get_symbols(self):
+        return {Symbol(self.symbol)}
+
+    def get_sign(self, symbol):
+        if self == symbol:
+            return {Sign.POSITIVE}
+        else:
+            return {None}
 
 class Bracket:
     def __init__(self, expr):
@@ -177,11 +281,66 @@ class Bracket:
     def __repr__(self) -> str:
         return f"Bracket({self.expr})"
     
+    def __hash__(self) -> int:
+        return hash(("bracket", self.__repr__()))
+    
     def prettyPrint(self) -> str:
         return f"({self.expr.prettyPrint()})"
 
-    def eval(self, vals : Mapping[str, bool]) -> bool:
+    def eval(self, vals : Mapping[str, bool]):
         return self.expr.eval()
+
+    def get_symbols(self):
+        return self.expr.get_symbols()
+    
+    def get_sign(self, symbol):
+        return self.expr.get_sign(symbol)
+
+class LogicTrue:
+    
+    def eval(self, vals):
+        return Boolean.TRUE
+    
+    def __repr__(self):
+        return f"True"
+    
+    def __hash__(self) -> int:
+        return hash(("true", self.__repr__()))
+    
+    def __contains__(self, item):
+        return item == self
+
+    def prettyPrint(self):
+        return f"true"
+
+    def get_symbols(self):
+        return set()
+    
+    def get_sign(self, symbol):
+        return set()
+    
+class LogicFalse:
+    
+    def eval(self, vals):
+        return Boolean.FALSE
+    
+    def __repr__(self):
+        return f"False"
+    
+    def __hash__(self) -> int:
+        return hash(("false", self.__repr__()))
+    
+    def __contains__(self, item):
+        return item == self
+
+    def prettyPrint(self):
+        return f"false"
+
+    def get_symbols(self):
+        return set()
+    
+    def get_sign(self, symbol):
+        return set()
 
 
 class Operations(Enum):

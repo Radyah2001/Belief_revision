@@ -1,4 +1,9 @@
 from Logic import *
+from collections import deque
+
+####################################################
+####               BELIEF-BASE                  ####
+####################################################
 
 class BeliefBase:
     def __init__(self):
@@ -6,11 +11,11 @@ class BeliefBase:
 
     def add_belief(self, belief):
         # Add belief to the belief base
-        self.beliefs.add(belief)
+        self.beliefs.add(Logic.logicFromString(belief))
 
     def remove_belief(self, belief):
         # Remove belief from the belief base
-        self.beliefs.discard(belief)
+        self.beliefs.discard(Logic.logicFromString(belief))
 
     def revise_belief(self, new_belief, revision_method):
         # Revise the belief base using a specific revision method
@@ -40,7 +45,12 @@ def simple_revision(belief_base, new_belief):
         belief_base.discard(LogicalSentence(Negation(new_belief.expr)))
     belief_base.add(new_belief)
     return belief_base
-  
+
+
+####################################################
+####               CNF CONVERSION               ####
+####################################################
+
 def cnf(logical) -> LogicalSentence:
         match logical:
             case LogicalSentence():
@@ -86,100 +96,277 @@ def cnf(logical) -> LogicalSentence:
             case Symbol():
                 return logical
             case Bracket():
-                return logical.expr
+                return Bracket(cnf(logical.expr))
             case _:
                 raise Exception(f"Case {type(logical)} not covered")
-            
-def clean(logical, literal):
+
+####################################################
+####                DPLL-ENTAILS                ####
+####################################################
+## NOT FULLY FINISHED
+
+def clean(logical, model):
     match logical:
-        case LogicalSentence():
-            return LogicalSentence(clean(logical.expr))
+        case LogicalSentence() | Negation():
+            return logical.__class__(clean(logical.expr, model))
         case Disjunction():
-            if logical.left.eval({literal.symbol: True}):
-                return clean(logical.right)
-            elif logical.right.eval({literal.symbol:True}):
-                return clean(logical.left)
+            if logical.left.eval(model):
+                return clean(logical.right, model)
+            elif logical.right.eval(model):
+                return clean(logical.left, model)
             else:
-                return Disjunction(clean(logical.left), clean(logical.right))
+                return Disjunction(clean(logical.left, model), clean(logical.right, model))
+        case Conjunction():
+            return Conjunction(clean(logical.left, model), clean(logical.right, model))
+        case Symbol():
+            return logical
 
 # Split conjunctions into separate clauses, so we can have a set of clauses that only contain disjunctions
 # For example (A | B) & (C | D) becomes (A | B), (C | D) in our set of clauses since we don't care about conjunctions
-def split_conjunction(logical):
-    ## not sure how to implement this
-    pass
-           
-def unit_propagation(clauses, unit_clause):
-    new_clauses = set()
-    for clause in clauses:
-        # Skip the unit clause
-        if clause == unit_clause:
-            continue
-        # If the unit clause is in the clause, remove that clause
-        if unit_clause.expr in clause.expr:
-            continue
-        # If the negation of the unit clause is in the clause, remove the negation
-        if type(unit_clause.expr) == Negation and unit_clause.expr.expr in clause.expr:
-            new_clause = clean(clause, unit_clause.expr.expr)
-            new_clauses.add(new_clause)
-        if unit_clause.expr in clause.expr:
-            new_clause = clean(clause, unit_clause.expr)
-            new_clauses.add(new_clause)
-        # Otherwise, keep the clause
-        else:
-            new_clauses.add(clause)
-    return new_clauses
+def split_conjunction(logical, split_set = set()):
+    match logical:
+        case LogicalSentence():
+            return split_set.union(split_conjunction(logical.expr, split_set))
+        case Biimplication():
+            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+        case Implication():
+            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+        case Conjunction():
+            left = split_conjunction(logical.left, split_set.copy())
+            right = split_conjunction(logical.right, split_set.copy())
+            
+            if not left:
+                if (logical.left.__class__ == Bracket):
+                    split_set.add(LogicalSentence(logical.left.expr))
+                else: 
+                    split_set.add(LogicalSentence(logical.left))
+            else:
+                split_set = split_set.union(left)
 
-# Helper function to convert a belief base and a query into a set of clauses with no conjunctions
-def resolution_clauses(belief_base, phi):
-    clauses = set()
-    for belief in belief_base:
-        clause = cnf(belief)
-        split_conjunctions = split_conjunction(clause)
-        if split_conjunctions:
-            for split in split_conjunctions:
-                clauses.add(split)
-        else:
-            clauses.add(clause)
-    # Add the negation of the query to check for contradiction
-    phi.expr = Negation(phi.expr)
-    clauses.add(cnf(phi))
-    return clauses
+            if not right:
+                if (logical.right.__class__ == Bracket):
+                    split_set.add(LogicalSentence(logical.right.expr))
+                else: 
+                    split_set.add(LogicalSentence(logical.right))
+            else:
+                split_set = split_set.union(right)
 
-def pure_literal_
+            return split_set
+        case Disjunction():
+            return split_set.union(split_conjunction(logical.left, split_set).union(split_conjunction(logical.right, split_set)))
+        case Negation():
+            return split_set.union(split_conjunction(logical.expr, split_set))
+        case Symbol():
+            return set()
+        case Bracket():
+            return split_set.union(split_conjunction(logical.expr, split_set))
 
-# Resolution algorithm
-def resolution(belief_base, phi):
-    # Turn the belief base and the query into a set of clauses
-    clauses = resolution_clauses(belief_base, phi)
+
+def get_clauses(sentence):
+    return split_conjunction(cnf(sentence))
+
+def bb_conjunction(beliefs):
     
-    # Unit propagation
-    # Keep doing unit propagation until there are no more unit clauses
-    contains_literal = True
-    while contains_literal:
-        contains_literal = False
+    if len(beliefs) == 1:
+        return beliefs[0].expr
+
+    return Conjunction(beliefs[0].expr, bb_conjunction(beliefs[1:]))
+
+def find_pure_symbol(symbols, clauses, model):
+
+    if not symbols or not clauses:
+        return None, None
+
+    for symbol in symbols:
+
+        symbol_sign = None
+        pure = True
+
+        
         for clause in clauses:
-            if clause.is_literal():
-                contains_literal = True
-                clauses = unit_propagation(clauses, clause)
-                break # Restart the loop to avoid concurrent modification of the set
-    # If the set of clauses is empty after unit propagation, then the belief base entails the query
-    if not clauses:
+
+            # CLEAN CLAUSE USING MODEL
+
+            signs = clause.get_sign(symbol)
+            if Sign.POSITIVE in signs and Sign.NEGATIVE in signs:
+                pure = False
+                break
+            elif Sign.POSITIVE in signs:
+                if (symbol_sign == Sign.NEGATIVE):
+                    pure = False
+                    break
+                symbol_sign = Sign.POSITIVE
+            elif Sign.NEGATIVE in signs:
+                if (symbol_sign == Sign.POSITIVE):
+                    pure = False
+                    break
+                symbol_sign = Sign.NEGATIVE
+
+        if pure:
+            if symbol_sign == Sign.POSITIVE: 
+                return symbol, True
+            elif symbol_sign == Sign.NEGATIVE:
+                return symbol, False
+    
+    return None, None
+            
+
+def find_unit_clause(clauses, model):
+    for clause in clauses:
+        clean_clause = clean(clause, model).expr
+        symbols = clean_clause.get_symbols()
+        if len(symbols) == 1:
+            symbol, = symbols
+            if clean_clause.__class__ == Symbol:
+                return symbol, True
+            elif clean_clause.__class__ == Negation:
+                return symbol, False
+            else:
+                raise Exception("Unreachable")
+
+    return None, None
+
+def dpll_entails(belief_base, sentence):
+    kb = LogicalSentence(Conjunction(bb_conjunction(list(belief_base)), Negation(sentence.expr)))
+    return not dpll_satisfiable(kb)
+
+
+def dpll_satisfiable(sentence):
+    clauses = get_clauses(sentence)
+    symbols = sentence.get_symbols()
+    return dpll(clauses, symbols, {})
+
+def dpll(clauses, symbols, model):
+
+    if not clauses or not symbols:
         return True
+
+    clauses_true = False
+    for clause in clauses:
+
+        value = model.get(clause)
+
+        if value == None:
+            continue
+
+        if value:
+            clauses_true = True
+        else:
+            return False
+    if clauses_true:
+        return True
+
+
+    symbol, value = find_pure_symbol(symbols, clauses, model)
+    if not symbol == None:
+        model[symbol] = value
+        symbols.remove(symbol)
+        return dpll(clauses, symbols, model)
     
+    symbol, value = find_unit_clause(clauses, model)
+    if not symbol == None:
+        model[symbol] = value
+        symbols.remove(symbol)
+        return dpll(clauses, symbols, model)
     
+    if len(symbols) <= 1:
+        symbol = list(symbols)[0]
+        rest = set()
+    else:
+        symbol, *rest = symbols
+
+    model_true = model.copy()
+    model_true[symbol] = True
+    model_false = model.copy()
+    model_false[symbol] = False
+
+    return dpll(clauses, set(rest), model_true) or dpll(clauses, set(rest), model_false)
+
+
+####################################################
+####               PL-FC-ENTAILS                ####
+####################################################
+
+
+# Excpects  sentence consisting of conjunctions of literals and only one positive
+def get_literals_sign(sentence, negatives=set(), positives=set()):
+    match sentence:
+
+        case LogicalSentence():
+            return get_literals_sign(sentence.expr, negatives, positives)
+
+        case Disjunction():
+            negatives_left, positives_left = get_literals_sign(sentence.left, negatives, positives)
+            negatives_right, positives_right = get_literals_sign(sentence.right, negatives, positives)
+
+            return negatives_left.union(negatives_right), positives_left.union(positives_right)
+
+        case Negation():
+            return {sentence.expr}, set()
+        case Symbol():
+            return set(), {sentence}
+        case _:
+            raise Exception("Sentence is not definite")
+
+def construct_conjunction(symbols):
+    if len(symbols) == 1:
+        return symbols[0]
     
-            
-            
+    return Conjunction(symbols[0], construct_conjunction(symbols[1:]))
+
+def convert_definite_to_implication(sentence):
+    negatives, positives = get_literals_sign(sentence)
+    if len(positives) != 1:
+        raise Exception("Sentence is not definite")
+    
+    positive_symbol, = positives
+
+    if len(negatives) == 0:
+        return LogicalSentence(Implication(LogicTrue(), positive_symbol))
+    
+    return LogicalSentence(Implication(construct_conjunction(list(negatives)), positive_symbol))
+
+# Converts belief base of definite clauses to implications
+def convert_dbb_to_implication(belief_base):
+    return list(map(lambda e: convert_definite_to_implication(e), belief_base))
+
+# Requires definite clauses to be written as implications
+def pl_fc_entails(belief_base, symbol):
+    count = {belief: len(belief.get_symbols()) for belief in belief_base}
+    inferred = {s: False for belief in belief_base for s in belief.get_symbols()}
+    q = deque()
+    for belief in belief_base:
+        if belief.expr.right.__class__ == Symbol:
+            q.append(belief.expr.right)
+
+    while q:
+        p = q.pop()
+
+        if p == symbol.expr:
+            return True
+        
+        if inferred[p] == False:
+            inferred[p] == True
+            for clause in belief_base:
+                if p in clause.expr.left:
+                    count[clause] -= 1
+                    if count[clause] == 0:
+                        q.append(clause.expr.right)
+    return False
+
+# Demonstration of pl_fc_entails
+
+
+def test_pl_fc_entails():
+    agent.add_belief("a")
+    agent.add_belief("!b | c")
+    symbol = Logic.logicFromString("c")
+    agent.belief_base.beliefs = convert_dbb_to_implication(agent.belief_base.beliefs)
+    print(pl_fc_entails(agent.belief_base.beliefs, symbol))
 
 
 
-
-# Testing the agent
-
-
-
-
+# Testing
 agent = BeliefRevisionAgent()
-agent.add_belief(Logic.logicFromString("r <=> (p | s)"))
 
-print(resolution(agent.belief_base.beliefs, Logic.logicFromString("!p")))
+#test_pl_fc_entails()
