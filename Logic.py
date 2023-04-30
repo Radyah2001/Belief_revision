@@ -21,6 +21,10 @@ class LogicalSentence:
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.expr.eval(vals)
 
+    def get_all_symbols(self):
+        return self.expr.get_all_symbols()
+
+
 
 class Biimplication:
     def __init__(self, left, right):
@@ -35,6 +39,9 @@ class Biimplication:
     
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.left.eval(vals) == self.right.eval(vals)
+
+    def get_all_symbols(self):
+        return self.left.get_all_symbols().union(self.right.get_all_symbols())
 
 
 class Implication:
@@ -52,6 +59,9 @@ class Implication:
         if (self.left.eval(vals) == False): return True
         else: return self.right.eval(vals)
 
+    def get_all_symbols(self):
+        return self.left.get_all_symbols().union(self.right.get_all_symbols())
+
 
 class Conjunction:
     def __init__(self, left, right):
@@ -66,6 +76,9 @@ class Conjunction:
 
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.left.eval(vals) and self.right.eval(vals)
+
+    def get_all_symbols(self):
+        return self.left.get_all_symbols().union(self.right.get_all_symbols())
     
 
 class Disjunction:
@@ -82,6 +95,9 @@ class Disjunction:
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.left.eval(vals) or self.right.eval(vals)
 
+    def get_all_symbols(self):
+        return self.left.get_all_symbols().union(self.right.get_all_symbols())
+
 
 class Negation:
     def __init__(self, expr):
@@ -95,6 +111,9 @@ class Negation:
 
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return not self.expr.eval(vals)
+
+    def get_all_symbols(self):
+        return self.expr.get_all_symbols()
 
 
 class Symbol:
@@ -110,6 +129,9 @@ class Symbol:
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return vals[self.symbol]
 
+    def get_all_symbols(self):
+        return {self.symbol}
+
 
 class Bracket:
     def __init__(self, expr):
@@ -123,6 +145,9 @@ class Bracket:
 
     def eval(self, vals : Mapping[str, bool]) -> bool:
         return self.expr.eval()
+
+    def get_all_symbols(self):
+        return self.expr.get_all_symbols()
 
 
 class Operations(Enum):
